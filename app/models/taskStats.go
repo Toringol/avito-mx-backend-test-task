@@ -1,6 +1,6 @@
 package models
 
-type RequestStats struct {
+type TaskStats struct {
 	ProductsCreated int64 `json:"products_created"`
 	ProductsUpdated int64 `json:"products_updated"`
 	ProductsDeleted int64 `json:"products_deleted"`

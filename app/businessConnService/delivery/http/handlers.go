@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 
@@ -44,91 +45,29 @@ func (h *handlers) handleLoadProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		fmt.Println(err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	for _, fheaders := range r.MultipartForm.File {
-		for _, hdr := range fheaders {
-			fd, err := hdr.Open()
-			if err != nil {
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
-
-			f, err := excelize.OpenReader(fd)
-			if err != nil {
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
-
-			requestStats := new(models.RequestStats)
-
-			sheets := f.GetSheetMap()
-			for _, sheet := range sheets {
-				rows, err := f.GetRows(sheet)
-				if err != nil {
-					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					return
-				}
-				for _, row := range rows {
-					productInfo, err := convertXlsxToProductInfo(row, sellerID)
-					if err != nil {
-						requestStats.RowsWithErrors++
-
-						fmt.Println(err)
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-						return
-					}
-
-					productRecord, err := h.usecase.SelectProduct(productInfo.SellerID, productInfo.OfferID)
-					switch {
-					case err == sql.ErrNoRows && productInfo.Available:
-						rowsAffected, err := h.usecase.CreateProduct(productInfo)
-						if err != nil {
-							fmt.Println(err)
-							http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-							return
-						}
-
-						requestStats.ProductsCreated += rowsAffected
-						continue
-					case err != nil:
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-						return
-					}
-
-					if !productInfo.Available {
-						rowsAffected, err := h.usecase.DeleteProduct(productInfo.SellerID, productInfo.OfferID)
-						if err != nil {
-							fmt.Println(err)
-							http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-							return
-						}
-
-						requestStats.ProductsDeleted += rowsAffected
-					} else {
-						productRecord.Name = productInfo.Name
-						productRecord.Price = productInfo.Price
-						productRecord.Quantity = productInfo.Quantity
-
-						rowsAffected, err := h.usecase.UpdateProduct(productRecord)
-						if err != nil {
-							fmt.Println(err)
-							http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-							return
-						}
-
-						requestStats.ProductsUpdated += rowsAffected
-					}
-				}
-			}
-
-			fmt.Println(requestStats)
-		}
+	taskID, err := h.usecase.CreateTask()
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	jsTaskID, err := json.Marshal(taskID)
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	go h.uploadProducer(r.MultipartForm.File, sellerID, taskID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsTaskID)
 }
 
 func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +98,99 @@ func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	f.Write(w)
+}
+
+func (h *handlers) uploadProducer(files map[string][]*multipart.FileHeader, sellerID string, taskID int64) {
+	_, err := h.usecase.UpdateTaskState(taskID, "IN PROGRESS")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	taskStats := new(models.TaskStats)
+
+	for _, fheaders := range files {
+		for _, hdr := range fheaders {
+			fd, err := hdr.Open()
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			f, err := excelize.OpenReader(fd)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			sheets := f.GetSheetMap()
+			for _, sheet := range sheets {
+				rows, err := f.GetRows(sheet)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				for _, row := range rows {
+					productInfo, err := convertXlsxToProductInfo(row, sellerID)
+					if err != nil {
+						taskStats.RowsWithErrors++
+
+						fmt.Println(err)
+						break
+					}
+
+					productRecord, err := h.usecase.SelectProduct(productInfo.SellerID, productInfo.OfferID)
+					switch {
+					case err == sql.ErrNoRows && productInfo.Available:
+						rowsAffected, err := h.usecase.CreateProduct(productInfo)
+						if err != nil {
+							fmt.Println(err)
+							return
+						}
+
+						taskStats.ProductsCreated += rowsAffected
+						continue
+					case err != nil:
+						return
+					}
+
+					if !productInfo.Available {
+						rowsAffected, err := h.usecase.DeleteProduct(productInfo.SellerID, productInfo.OfferID)
+						if err != nil {
+							fmt.Println(err)
+							return
+						}
+
+						taskStats.ProductsDeleted += rowsAffected
+					} else {
+						productRecord.Name = productInfo.Name
+						productRecord.Price = productInfo.Price
+						productRecord.Quantity = productInfo.Quantity
+
+						rowsAffected, err := h.usecase.UpdateProduct(productRecord)
+						if err != nil {
+							fmt.Println(err)
+							return
+						}
+
+						taskStats.ProductsUpdated += rowsAffected
+					}
+				}
+			}
+		}
+	}
+
+	_, err = h.usecase.UpdateTaskState(taskID, "DONE")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	_, err = h.usecase.CreateTaskStats(taskID, taskStats)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 }
 
 func convertXlsxToProductInfo(row []string, sellerIDStr string) (*models.ProductInfo, error) {
