@@ -21,6 +21,7 @@ type handlers struct {
 	taskQueue chan models.Task
 }
 
+// NewHandlers - create new handlers using gorilla router
 func NewHandlers(us businessConnService.IUsecase, taskQueue chan models.Task, logger *logrus.Logger) *mux.Router {
 	handlers := handlers{
 		usecase:   us,
@@ -49,11 +50,39 @@ func NewHandlers(us businessConnService.IUsecase, taskQueue chan models.Task, lo
 	return r
 }
 
+// swagger:operation POST /loadProduct handleLoadProduct
+//
+// Get sellerID and xlsx files and return task id
+// ---
+// produces:
+// - multipart/form-data
+// parameters:
+// - name: seller_id
+//   in: formData
+//   description: The seller_id needs to match customer id with products.
+//   required: true
+//   type: text
+// - name: products
+//   in: formData
+//   description: Files with products info.
+//   required: true
+//   type: file
+// responses:
+//   200:
+//     description: successful operation
+//     schema:
+//       type: string
+//       task_id: string
+//       description: Return task id
+//   400:
+//       description: Invalid seller_id supplied
+//   500:
+//     description: Sth went wrong
 func (h *handlers) handleLoadProduct(w http.ResponseWriter, r *http.Request) {
 	sellerID := r.FormValue("seller_id")
 	if sellerID == "" {
 		h.logger.Info("Empty sellerID")
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
@@ -89,6 +118,29 @@ func (h *handlers) handleLoadProduct(w http.ResponseWriter, r *http.Request) {
 	w.Write(taskIDJSON)
 }
 
+// swagger:operation GET /getProduct handleGetProducts
+//
+// Get UserListRequest and return xlsx file with all products
+// that match with request data
+// ---
+// produces:
+// - application/json
+// parameters:
+// - name: userListRequest
+//   in: json
+//   description: userListRequest may contain seller_id, offer_id and name.
+//   required: false
+//   type: #/definitions/UserListRequest
+// responses:
+//   200:
+//     description: successful operation
+//     schema:
+//       type: file
+//       description: Return xlsx file
+//   400:
+//     description: Invalid userListRequest supplied
+//   500:
+//     description: Sth went wrong
 func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 	userListRequest := new(models.UserListRequest)
 
@@ -155,6 +207,30 @@ func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 	f.Write(w)
 }
 
+// swagger:operation GET /getTaskState/{task_id} handleGetTaskState
+//
+// Get task id and return state
+// ---
+// summary: Get task state by task id
+// operationId: handleGetTaskState
+// produces:
+// - application/json
+// parameters:
+// - name: task_id
+//   in: path
+//   required: true
+//   type: string
+// responses:
+//   200:
+//     description: successful operation
+//     schema:
+//       type: string
+//       state: string
+//       description: Return state
+//   400:
+//     description: Invalid userListRequest supplied
+//   500:
+//     description: Sth went wrong
 func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
 	taskIDStr, ok := mux.Vars(r)["task_id"]
 	if !ok {
@@ -193,6 +269,28 @@ func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
 	w.Write(stateJSON)
 }
 
+// swagger:operation GET /getTaskStats/{task_id} handleGetTaskStats
+//
+// Get task id and return stats
+// ---
+// summary: Get stats by task id
+// operationId: handleGetTaskStats
+// produces:
+// - application/json
+// parameters:
+// - name: task_id
+//   in: path
+//   required: true
+//   type: string
+// responses:
+//   200:
+//     description: successful operation
+//     schema:
+//       $ref: '#/definitions/TaskStats'
+//   400:
+//     description: Invalid userListRequest supplied
+//   500:
+//     description: Sth went wrong
 func (h *handlers) handleGetTaskStats(w http.ResponseWriter, r *http.Request) {
 	taskIDStr, ok := mux.Vars(r)["task_id"]
 	if !ok {

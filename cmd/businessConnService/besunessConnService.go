@@ -16,6 +16,22 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// API REST
+//
+// This is api of avito-mx-backend-test-task project
+//
+//     Schemes: http
+//     Host: localhost:8080
+//     Version: 0.1.0
+//     basePath: /
+//
+//     Consumes:
+//     - application/json
+//
+//     Produces:
+//     - application/json
+//
+// swagger:meta
 func main() {
 	if err := config.Init(); err != nil {
 		log.Fatalf("%s", err.Error())

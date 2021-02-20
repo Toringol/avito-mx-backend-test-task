@@ -20,6 +20,7 @@ type taskManager struct {
 	logger     *logrus.Logger
 }
 
+// NewTaskManager - create new task manager
 func NewTaskManager(us businessConnService.IUsecase, taskQueue chan models.Task,
 	statsQueue chan models.TaskStats, stopCh chan struct{}, logger *logrus.Logger) *taskManager {
 	return &taskManager{
@@ -31,6 +32,7 @@ func NewTaskManager(us businessConnService.IUsecase, taskQueue chan models.Task,
 	}
 }
 
+// TaskManager - manages events like new task added, new stats added or stop taskManager
 func (tm *taskManager) TaskManager() {
 	for {
 		select {
@@ -45,6 +47,7 @@ func (tm *taskManager) TaskManager() {
 	}
 }
 
+// uploadUserFilesPackProducer - get task and concurrently processing every file
 func (tm *taskManager) uploadUserFilesPackProducer(taskInfo *models.Task, statsQueue chan models.TaskStats) {
 	_, err := tm.usecase.UpdateTaskState(taskInfo.TaskID, "IN PROGRESS")
 	if err != nil {
@@ -62,10 +65,12 @@ func (tm *taskManager) uploadUserFilesPackProducer(taskInfo *models.Task, statsQ
 	for _, fheaders := range taskInfo.Files {
 		for _, hdr := range fheaders {
 			wg.Add(1)
+			// for every file launch goroutine
 			go tm.uploadFileProducer(hdr, taskInfo, fileStatsQueue, &wg)
 		}
 	}
 
+	// concurrently processing stats of every file
 	go func() {
 		for fileStats := range fileStatsQueue {
 			taskStats.ProductsCreated += fileStats.ProductsCreated
@@ -80,11 +85,13 @@ func (tm *taskManager) uploadUserFilesPackProducer(taskInfo *models.Task, statsQ
 
 	close(fileStatsQueue)
 
+	// wait until all statistics saves after all file uploads
 	<-endFileStats
 
 	statsQueue <- *taskStats
 }
 
+// uploadFileProducer - get file and concurrently upload all info of every sheet in file
 func (tm *taskManager) uploadFileProducer(hdr *multipart.FileHeader, taskInfo *models.Task,
 	fileStatsQueue chan models.TaskStats, wg *sync.WaitGroup) {
 
@@ -107,13 +114,14 @@ func (tm *taskManager) uploadFileProducer(hdr *multipart.FileHeader, taskInfo *m
 	sheets := f.GetSheetMap()
 	for _, sheet := range sheets {
 		sheetWG.Add(1)
-
+		// for every sheet launch goroutine
 		go tm.uploadFileSheetProducer(f, taskInfo, sheet, fileStatsQueue, &sheetWG)
 	}
 
 	sheetWG.Wait()
 }
 
+// uploadFileSheetProducer - process upload data in sheet
 func (tm *taskManager) uploadFileSheetProducer(f *excelize.File, taskInfo *models.Task, sheet string,
 	fileStatsQueue chan models.TaskStats, sheetWG *sync.WaitGroup) {
 
@@ -176,6 +184,7 @@ func (tm *taskManager) uploadFileSheetProducer(f *excelize.File, taskInfo *model
 	fileStatsQueue <- *fileStats
 }
 
+// uploadStatsProducer - upload stats in DB and change task state to DONE
 func (tm *taskManager) uploadStatsProducer(stats models.TaskStats) {
 	_, err := tm.usecase.UpdateTaskState(stats.TaskID, "DONE")
 	if err != nil {
