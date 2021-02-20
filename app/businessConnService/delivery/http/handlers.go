@@ -3,9 +3,6 @@ package http
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"mime/multipart"
 	"net/http"
 	"strconv"
 
@@ -19,19 +16,34 @@ import (
 )
 
 type handlers struct {
-	usecase businessConnService.IUsecase
+	usecase   businessConnService.IUsecase
+	logger    *logrus.Logger
+	taskQueue chan models.Task
 }
 
-func NewHandlers(us businessConnService.IUsecase) *mux.Router {
-	handlers := handlers{usecase: us}
+func NewHandlers(us businessConnService.IUsecase, taskQueue chan models.Task, logger *logrus.Logger) *mux.Router {
+	handlers := handlers{
+		usecase:   us,
+		taskQueue: taskQueue,
+		logger:    logger,
+	}
 
 	r := mux.NewRouter()
-	logger := logrus.New()
 
-	r.HandleFunc("/loadProduct", middlewares.LogRequestMiddleware(logger, handlers.handleLoadProduct)).
+	r.HandleFunc("/loadProduct",
+		middlewares.LogRequestMiddleware(handlers.logger, handlers.handleLoadProduct)).
 		Methods("POST")
 
-	r.HandleFunc("/getProduct", middlewares.LogRequestMiddleware(logger, handlers.handleGetProducts)).
+	r.HandleFunc("/getProduct",
+		middlewares.LogRequestMiddleware(handlers.logger, handlers.handleGetProducts)).
+		Methods("GET")
+
+	r.HandleFunc("/getTaskState/{task_id:[0-9]+}",
+		middlewares.LogRequestMiddleware(handlers.logger, handlers.handleGetTaskState)).
+		Methods("GET")
+
+	r.HandleFunc("/getTaskStats/{task_id:[0-9]+}",
+		middlewares.LogRequestMiddleware(handlers.logger, handlers.handleGetTaskStats)).
 		Methods("GET")
 
 	return r
@@ -40,48 +52,60 @@ func NewHandlers(us businessConnService.IUsecase) *mux.Router {
 func (h *handlers) handleLoadProduct(w http.ResponseWriter, r *http.Request) {
 	sellerID := r.FormValue("seller_id")
 	if sellerID == "" {
+		h.logger.Info("Empty sellerID")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		fmt.Println(err)
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
 	taskID, err := h.usecase.CreateTask()
 	if err != nil {
-		fmt.Println(err)
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	jsTaskID, err := json.Marshal(taskID)
+	taskIDJSON, err := json.Marshal(taskID)
 	if err != nil {
-		fmt.Println(err)
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	go h.uploadProducer(r.MultipartForm.File, sellerID, taskID)
+	task := models.Task{
+		TaskID:   taskID,
+		SellerID: sellerID,
+		Files:    r.MultipartForm.File,
+	}
+
+	h.taskQueue <- task
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsTaskID)
+	w.Write(taskIDJSON)
 }
 
 func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 	userListRequest := new(models.UserListRequest)
 
 	if err := json.NewDecoder(r.Body).Decode(userListRequest); err != nil {
-		fmt.Println(err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		h.logger.WithField("ErrInfo", err.Error()).Info("BadRequest")
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
 	products, err := h.usecase.SelectProductsBySpecificProductInfo(userListRequest)
-	if err != nil {
-		fmt.Println(err)
+	switch {
+	case err == sql.ErrNoRows:
+		h.logger.WithField("ErrInfo", err.Error()).Info("No such products")
+		w.Write([]byte("No such products"))
+		return
+	case err != nil:
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -90,164 +114,119 @@ func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 
 	for i, product := range products {
 		counterStr := strconv.Itoa(i + 1)
-		f.SetCellValue("Sheet1", "A"+counterStr, product.OfferID)
-		f.SetCellValue("Sheet1", "B"+counterStr, product.Name)
-		f.SetCellValue("Sheet1", "C"+counterStr, product.Price)
-		f.SetCellValue("Sheet1", "D"+counterStr, product.Quantity)
-		f.SetCellValue("Sheet1", "D"+counterStr, product.Available)
-	}
 
-	f.Write(w)
-}
+		err = f.SetCellValue("Sheet1", "A"+counterStr, product.OfferID)
+		if err != nil {
+			h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 
-func (h *handlers) uploadProducer(files map[string][]*multipart.FileHeader, sellerID string, taskID int64) {
-	_, err := h.usecase.UpdateTaskState(taskID, "IN PROGRESS")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+		err = f.SetCellValue("Sheet1", "B"+counterStr, product.Name)
+		if err != nil {
+			h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 
-	taskStats := new(models.TaskStats)
+		err = f.SetCellValue("Sheet1", "C"+counterStr, product.Price)
+		if err != nil {
+			h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 
-	for _, fheaders := range files {
-		for _, hdr := range fheaders {
-			fd, err := hdr.Open()
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
+		err = f.SetCellValue("Sheet1", "D"+counterStr, product.Quantity)
+		if err != nil {
+			h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 
-			f, err := excelize.OpenReader(fd)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-
-			sheets := f.GetSheetMap()
-			for _, sheet := range sheets {
-				rows, err := f.GetRows(sheet)
-				if err != nil {
-					fmt.Println(err)
-					return
-				}
-				for _, row := range rows {
-					productInfo, err := convertXlsxToProductInfo(row, sellerID)
-					if err != nil {
-						taskStats.RowsWithErrors++
-
-						fmt.Println(err)
-						break
-					}
-
-					productRecord, err := h.usecase.SelectProduct(productInfo.SellerID, productInfo.OfferID)
-					switch {
-					case err == sql.ErrNoRows && productInfo.Available:
-						rowsAffected, err := h.usecase.CreateProduct(productInfo)
-						if err != nil {
-							fmt.Println(err)
-							return
-						}
-
-						taskStats.ProductsCreated += rowsAffected
-						continue
-					case err != nil:
-						return
-					}
-
-					if !productInfo.Available {
-						rowsAffected, err := h.usecase.DeleteProduct(productInfo.SellerID, productInfo.OfferID)
-						if err != nil {
-							fmt.Println(err)
-							return
-						}
-
-						taskStats.ProductsDeleted += rowsAffected
-					} else {
-						productRecord.Name = productInfo.Name
-						productRecord.Price = productInfo.Price
-						productRecord.Quantity = productInfo.Quantity
-
-						rowsAffected, err := h.usecase.UpdateProduct(productRecord)
-						if err != nil {
-							fmt.Println(err)
-							return
-						}
-
-						taskStats.ProductsUpdated += rowsAffected
-					}
-				}
-			}
+		err = f.SetCellValue("Sheet1", "D"+counterStr, product.Available)
+		if err != nil {
+			h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 	}
 
-	_, err = h.usecase.UpdateTaskState(taskID, "DONE")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	_, err = h.usecase.CreateTaskStats(taskID, taskStats)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	f.Write(w)
 }
 
-func convertXlsxToProductInfo(row []string, sellerIDStr string) (*models.ProductInfo, error) {
-	if len(row) != 5 {
-		return nil, errors.New("Xlsx row has wrong length")
+func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
+	taskIDStr, ok := mux.Vars(r)["task_id"]
+	if !ok {
+		h.logger.WithField("TaskID", taskIDStr).Info("BadRequest")
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
 	}
 
-	offerIDStr := row[0]
-	nameStr := row[1]
-	priceStr := row[2]
-	quantityStr := row[3]
-	availableStr := row[4]
-
-	if offerIDStr == "" || nameStr == "" || priceStr == "" ||
-		quantityStr == "" || availableStr == "" {
-		return nil, errors.New("Nil col value")
-	}
-
-	productInfo := new(models.ProductInfo)
-
-	sellerID, err := strconv.ParseInt(sellerIDStr, 10, 64)
+	taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
 	if err != nil {
-		return nil, err
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
-	offerID, err := strconv.ParseInt(offerIDStr, 10, 64)
+	state, err := h.usecase.SelectTaskState(taskID)
+	switch {
+	case err == sql.ErrNoRows:
+		h.logger.WithField("TaskID", taskID).Info("BadRequest no such task")
+		http.Error(w, "No such task", http.StatusBadRequest)
+		return
+	case err != nil:
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	stateJSON, err := json.Marshal(state)
 	if err != nil {
-		return nil, err
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
-	name := nameStr
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(stateJSON)
+}
 
-	price, err := strconv.ParseFloat(priceStr, 64)
+func (h *handlers) handleGetTaskStats(w http.ResponseWriter, r *http.Request) {
+	taskIDStr, ok := mux.Vars(r)["task_id"]
+	if !ok {
+		h.logger.WithField("TaskID", taskIDStr).Info("BadRequest")
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
 	if err != nil {
-		return nil, err
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
-	quantity, err := strconv.ParseInt(quantityStr, 10, 64)
+	stats, err := h.usecase.SelectTaskStatsByTaskID(taskID)
+	switch {
+	case err == sql.ErrNoRows:
+		h.logger.WithField("TaskID", taskID).Info("BadRequest no such task")
+		http.Error(w, "No such task", http.StatusBadRequest)
+		return
+	case err != nil:
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	statsJSON, err := json.Marshal(stats)
 	if err != nil {
-		return nil, err
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
-	available, err := strconv.ParseBool(availableStr)
-	if err != nil {
-		return nil, err
-	}
-
-	if offerID <= 0 || sellerID <= 0 || price < 0 || quantity < 0 {
-		return nil, errors.New("Misrepresentation of values")
-	}
-
-	productInfo.SellerID = sellerID
-	productInfo.OfferID = offerID
-	productInfo.Name = name
-	productInfo.Price = price
-	productInfo.Quantity = quantity
-	productInfo.Available = available
-
-	return productInfo, nil
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(statsJSON)
 }

@@ -11,9 +11,10 @@ type IRepository interface {
 	UpdateProduct(*models.ProductInfo) (int64, error)
 	DeleteProduct(int64, int64) (int64, error)
 
+	SelectTaskState(int64) (string, error)
 	CreateTask() (int64, error)
 	UpdateTaskState(int64, string) (int64, error)
 
 	SelectTaskStatsByTaskID(int64) (*models.TaskStats, error)
-	CreateTaskStats(int64, *models.TaskStats) (int64, error)
+	CreateTaskStats(*models.TaskStats) (int64, error)
 }

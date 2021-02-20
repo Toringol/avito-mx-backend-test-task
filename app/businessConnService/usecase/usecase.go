@@ -33,6 +33,10 @@ func (us usecase) DeleteProduct(sellerID, offerID int64) (int64, error) {
 	return us.repo.DeleteProduct(sellerID, offerID)
 }
 
+func (us usecase) SelectTaskState(taskID int64) (string, error) {
+	return us.repo.SelectTaskState(taskID)
+}
+
 func (us usecase) CreateTask() (int64, error) {
 	return us.repo.CreateTask()
 }
@@ -45,6 +49,6 @@ func (us usecase) SelectTaskStatsByTaskID(taskID int64) (*models.TaskStats, erro
 	return us.repo.SelectTaskStatsByTaskID(taskID)
 }
 
-func (us usecase) CreateTaskStats(taskID int64, taskStats *models.TaskStats) (int64, error) {
-	return us.repo.CreateTaskStats(taskID, taskStats)
+func (us usecase) CreateTaskStats(taskStats *models.TaskStats) (int64, error) {
+	return us.repo.CreateTaskStats(taskStats)
 }

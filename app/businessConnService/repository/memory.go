@@ -160,6 +160,19 @@ func (repo *repository) DeleteProduct(sellerID, offerID int64) (int64, error) {
 	return affectedRowsCounter, nil
 }
 
+func (repo *repository) SelectTaskState(taskID int64) (string, error) {
+	state := ""
+
+	err := repo.DB.
+		QueryRow("SELECT state FROM productUploadsTask WHERE task_id = $1", taskID).
+		Scan(&state)
+	if err != nil {
+		return "", err
+	}
+
+	return state, nil
+}
+
 func (repo *repository) CreateTask() (int64, error) {
 	taskID := int64(0)
 	stateDefault := "CREATED"
@@ -198,7 +211,7 @@ func (repo *repository) SelectTaskStatsByTaskID(taskID int64) (*models.TaskStats
 
 	err := repo.DB.
 		QueryRow("SELECT * FROM productTaskStats WHERE task_id = $1", taskID).
-		Scan(&taskStats.ProductsCreated, &taskStats.ProductsUpdated,
+		Scan(&taskStats.TaskID, &taskStats.ProductsCreated, &taskStats.ProductsUpdated,
 			&taskStats.ProductsDeleted, &taskStats.RowsWithErrors)
 	if err != nil {
 		return nil, err
@@ -207,12 +220,12 @@ func (repo *repository) SelectTaskStatsByTaskID(taskID int64) (*models.TaskStats
 	return taskStats, nil
 }
 
-func (repo *repository) CreateTaskStats(taskID int64, taskStats *models.TaskStats) (int64, error) {
+func (repo *repository) CreateTaskStats(taskStats *models.TaskStats) (int64, error) {
 	res, err := repo.DB.Exec(
 		"INSERT INTO productTaskStats "+
 			"(task_id, products_created, products_updated, products_deleted, rows_with_errors) "+
 			"VALUES ($1, $2, $3, $4, $5)",
-		taskID,
+		taskStats.TaskID,
 		taskStats.ProductsCreated,
 		taskStats.ProductsUpdated,
 		taskStats.ProductsDeleted,
