@@ -1,0 +1,7 @@
+portListen: :8080
+
+DBHost: 172.20.0.1
+DBPort: 5432
+DBUser: avito
+DBPassword: avito
+DBName: avito

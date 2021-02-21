@@ -1,0 +1,189 @@
+definitions:
+  ProductInfo:
+    description: ProductInfo - DB model description of product
+    properties:
+      available:
+        type: boolean
+        x-go-name: Available
+      name:
+        type: string
+        x-go-name: Name
+      offer_id:
+        format: int64
+        type: integer
+        x-go-name: OfferID
+      price:
+        format: double
+        type: number
+        x-go-name: Price
+      quantity:
+        format: int64
+        type: integer
+        x-go-name: Quantity
+      seller_id:
+        format: int64
+        type: integer
+        x-go-name: SellerID
+    type: object
+    x-go-package: github.com/Toringol/avito-mx-backend-test-task/app/models
+  Task:
+    description: |-
+      Task is model for taskQueue
+      When user loads files in running main goroutine, task adds
+      to taskQueue futher we can process all tasks concurrently
+    properties:
+      Files:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/Task'
+          type: array
+        type: object
+      SellerID:
+        type: string
+      TaskID:
+        format: int64
+        type: integer
+    type: object
+    x-go-package: github.com/Toringol/avito-mx-backend-test-task/app/models
+  TaskStats:
+    description: TaskStats is model stats of loading files for user
+    properties:
+      products_created:
+        format: int64
+        type: integer
+        x-go-name: ProductsCreated
+      products_deleted:
+        format: int64
+        type: integer
+        x-go-name: ProductsDeleted
+      products_updated:
+        format: int64
+        type: integer
+        x-go-name: ProductsUpdated
+      rows_with_errors:
+        format: int64
+        type: integer
+        x-go-name: RowsWithErrors
+      task_id:
+        format: int64
+        type: integer
+        x-go-name: TaskID
+    type: object
+    x-go-package: github.com/Toringol/avito-mx-backend-test-task/app/models
+  UserListRequest:
+    description: |-
+      UserListRequest is request for searching specific products
+      by info in request
+    properties:
+      name:
+        type: string
+        x-go-name: Name
+      offer_id:
+        format: int64
+        type: integer
+        x-go-name: OfferID
+      seller_id:
+        format: int64
+        type: integer
+        x-go-name: SellerID
+    type: object
+    x-go-package: github.com/Toringol/avito-mx-backend-test-task/app/models
+info: {}
+paths:
+  /getProduct:
+    get:
+      description: |-
+        Get UserListRequest and return xlsx file with all products
+        that match with request data
+      operationId: handleGetProducts
+      parameters:
+      - name: UserListRequest
+        in: body
+        description: userListRequest may contain seller_id, offer_id and name.
+        requires: false
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: successful operation
+          schema:
+            description: Return xlsx file
+            type: file
+        "400":
+          description: Invalid userListRequest supplied
+        "500":
+          description: Sth went wrong
+  /getTaskState/{task_id}:
+    get:
+      description: Get task id and return state
+      operationId: handleGetTaskState
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: successful operation
+          schema:
+            description: Return state
+            type: string
+        "400":
+          description: Invalid userListRequest supplied
+        "500":
+          description: Sth went wrong
+      summary: Get task state by task id
+  /getTaskStats/{task_id}:
+    get:
+      description: Get task id and return stats
+      operationId: handleGetTaskStats
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: successful operation
+          schema:
+            $ref: '#/definitions/TaskStats'
+        "400":
+          description: Invalid userListRequest supplied
+        "500":
+          description: Sth went wrong
+      summary: Get stats by task id
+  /loadProduct:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Get sellerID and xlsx files and return task id
+      operationId: handleLoadProduct
+      parameters:
+      - description: The seller_id needs to match customer id with products.
+        in: formData
+        name: seller_id
+        required: true
+        type: string
+      - description: Files with products info.
+        in: formData
+        name: products
+        required: true
+        type: file
+      produces:
+      - multipart/form-data
+      responses:
+        "200":
+          description: successful operation
+          schema:
+            description: Return task id
+            type: string
+        "400":
+          description: Invalid seller_id supplied
+        "500":
+          description: Sth went wrong
+swagger: "2.0"

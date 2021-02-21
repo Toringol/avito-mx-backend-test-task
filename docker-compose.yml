@@ -1,0 +1,28 @@
+version: "3.7"
+services: 
+  database:
+    build:
+      context: build/postgres/
+      dockerfile: Dockerfile
+    ports:
+      - "5432:5432"
+    networks: 
+      - avito-network
+  server:
+    build:
+      context: .
+      dockerfile: build/businessConnService/Dockerfile
+    depends_on: 
+      - database
+    networks: 
+      - avito-network
+    ports:
+      - "8080:8080"
+
+networks:
+  avito-network:
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: "172.20.0.1"
+    ipam:
+      config:
+        - subnet: "172.20.0.0/16"
