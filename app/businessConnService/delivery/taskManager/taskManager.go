@@ -2,7 +2,6 @@ package taskManager
 
 import (
 	"database/sql"
-	"fmt"
 	"mime/multipart"
 	"sync"
 
@@ -66,7 +65,6 @@ func (tm *taskManager) uploadUserFilesPackProducer(taskInfo *models.Task, statsQ
 	for _, fheaders := range taskInfo.Files {
 		for _, hdr := range fheaders {
 			wg.Add(1)
-			fmt.Println("Start go routine")
 			// for every file launch goroutine
 			go tm.uploadFileProducer(hdr, taskInfo, fileStatsQueue, &wg)
 		}
@@ -89,8 +87,6 @@ func (tm *taskManager) uploadUserFilesPackProducer(taskInfo *models.Task, statsQ
 
 	// wait until all statistics saves after all file uploads
 	<-endFileStats
-
-	fmt.Println("End upload files")
 
 	statsQueue <- *taskStats
 }
@@ -118,14 +114,11 @@ func (tm *taskManager) uploadFileProducer(hdr *multipart.FileHeader, taskInfo *m
 	sheets := f.GetSheetMap()
 	for _, sheet := range sheets {
 		sheetWG.Add(1)
-		fmt.Println("Start goroutine for sheet")
 		// for every sheet launch goroutine
 		go tm.uploadFileSheetProducer(f, taskInfo, sheet, fileStatsQueue, &sheetWG)
 	}
 
 	sheetWG.Wait()
-
-	fmt.Println("End goroutine for sheets")
 }
 
 // uploadFileSheetProducer - process upload data in sheet
@@ -142,11 +135,7 @@ func (tm *taskManager) uploadFileSheetProducer(f *excelize.File, taskInfo *model
 		return
 	}
 
-	fmt.Println(rows)
-
 	for _, row := range rows {
-		fmt.Println(row)
-
 		if len(row) == 0 {
 			break
 		}
