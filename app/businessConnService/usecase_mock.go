@@ -109,10 +109,10 @@ func (mr *MockIUsecaseMockRecorder) DeleteProduct(arg0, arg1 interface{}) *gomoc
 }
 
 // SelectTaskState mocks base method
-func (m *MockIUsecase) SelectTaskState(arg0 int64) (string, error) {
+func (m *MockIUsecase) SelectTaskState(arg0 int64) (*models.TaskState, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SelectTaskState", arg0)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(*models.TaskState)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

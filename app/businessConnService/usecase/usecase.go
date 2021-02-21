@@ -9,6 +9,7 @@ type usecase struct {
 	repo businessConnService.IRepository
 }
 
+// NewUsecase - create new usecase that implement interface IUsecase
 func NewUsecase(repo businessConnService.IRepository) businessConnService.IUsecase {
 	return usecase{repo: repo}
 }
@@ -33,7 +34,7 @@ func (us usecase) DeleteProduct(sellerID, offerID int64) (int64, error) {
 	return us.repo.DeleteProduct(sellerID, offerID)
 }
 
-func (us usecase) SelectTaskState(taskID int64) (string, error) {
+func (us usecase) SelectTaskState(taskID int64) (*models.TaskState, error) {
 	return us.repo.SelectTaskState(taskID)
 }
 

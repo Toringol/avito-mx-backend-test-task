@@ -9,7 +9,7 @@ type IUsecase interface {
 	UpdateProduct(*models.ProductInfo) (int64, error)
 	DeleteProduct(int64, int64) (int64, error)
 
-	SelectTaskState(int64) (string, error)
+	SelectTaskState(int64) (*models.TaskState, error)
 	CreateTask() (int64, error)
 	UpdateTaskState(int64, string) (int64, error)
 

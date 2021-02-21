@@ -7,8 +7,10 @@ import (
 	"github.com/Toringol/avito-mx-backend-test-task/app/models"
 )
 
-func ConvertXlsxRowToProductInfo(row []string, sellerIDStr string) (*models.ProductInfo, error) {
-	if len(row) != 5 {
+const rowLength = 5
+
+func ConvertXlsxRowToProductInfo(row []string, sellerID int64) (*models.ProductInfo, error) {
+	if len(row) != rowLength {
 		return nil, errors.New("Xlsx row has wrong length")
 	}
 
@@ -24,11 +26,6 @@ func ConvertXlsxRowToProductInfo(row []string, sellerIDStr string) (*models.Prod
 	}
 
 	productInfo := new(models.ProductInfo)
-
-	sellerID, err := strconv.ParseInt(sellerIDStr, 10, 64)
-	if err != nil {
-		return nil, err
-	}
 
 	offerID, err := strconv.ParseInt(offerIDStr, 10, 64)
 	if err != nil {

@@ -79,9 +79,16 @@ func NewHandlers(us businessConnService.IUsecase, taskQueue chan models.Task, lo
 //   500:
 //     description: Sth went wrong
 func (h *handlers) handleLoadProduct(w http.ResponseWriter, r *http.Request) {
-	sellerID := r.FormValue("seller_id")
-	if sellerID == "" {
+	sellerIDStr := r.FormValue("seller_id")
+	if sellerIDStr == "" {
 		h.logger.Info("Empty sellerID")
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	sellerIDInt, err := strconv.ParseInt(sellerIDStr, 10, 64)
+	if err != nil {
+		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -108,7 +115,7 @@ func (h *handlers) handleLoadProduct(w http.ResponseWriter, r *http.Request) {
 
 	task := models.Task{
 		TaskID:   taskID,
-		SellerID: sellerID,
+		SellerID: sellerIDInt,
 		Files:    r.MultipartForm.File,
 	}
 
@@ -154,7 +161,7 @@ func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == sql.ErrNoRows:
 		h.logger.WithField("ErrInfo", err.Error()).Info("No such products")
-		w.Write([]byte("No such products"))
+		http.Error(w, "No such products", http.StatusBadRequest)
 		return
 	case err != nil:
 		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
@@ -228,7 +235,7 @@ func (h *handlers) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 //       state: string
 //       description: Return state
 //   400:
-//     description: Invalid userListRequest supplied
+//     description: Invalid taskID supplied
 //   500:
 //     description: Sth went wrong
 func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
@@ -242,11 +249,11 @@ func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
 	taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
 	if err != nil {
 		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
-	state, err := h.usecase.SelectTaskState(taskID)
+	taskState, err := h.usecase.SelectTaskState(taskID)
 	switch {
 	case err == sql.ErrNoRows:
 		h.logger.WithField("TaskID", taskID).Info("BadRequest no such task")
@@ -258,7 +265,7 @@ func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stateJSON, err := json.Marshal(state)
+	taskStateJSON, err := json.Marshal(taskState)
 	if err != nil {
 		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -266,7 +273,7 @@ func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(stateJSON)
+	w.Write(taskStateJSON)
 }
 
 // swagger:operation GET /getTaskStats/{task_id} handleGetTaskStats
@@ -288,7 +295,7 @@ func (h *handlers) handleGetTaskState(w http.ResponseWriter, r *http.Request) {
 //     schema:
 //       $ref: '#/definitions/TaskStats'
 //   400:
-//     description: Invalid userListRequest supplied
+//     description: Invalid taskID supplied
 //   500:
 //     description: Sth went wrong
 func (h *handlers) handleGetTaskStats(w http.ResponseWriter, r *http.Request) {
@@ -302,7 +309,7 @@ func (h *handlers) handleGetTaskStats(w http.ResponseWriter, r *http.Request) {
 	taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
 	if err != nil {
 		h.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 

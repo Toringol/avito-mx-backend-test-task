@@ -15,6 +15,7 @@ type repository struct {
 	DB *sql.DB
 }
 
+// NewRepository - create new repository that implement IRepository interface
 func NewRepository() businessConnService.IRepository {
 	host := viper.GetString("DBHost")
 	port := viper.GetInt("DBPort")
@@ -160,17 +161,17 @@ func (repo *repository) DeleteProduct(sellerID, offerID int64) (int64, error) {
 	return affectedRowsCounter, nil
 }
 
-func (repo *repository) SelectTaskState(taskID int64) (string, error) {
-	state := ""
+func (repo *repository) SelectTaskState(taskID int64) (*models.TaskState, error) {
+	taskState := new(models.TaskState)
 
 	err := repo.DB.
-		QueryRow("SELECT state FROM productUploadsTask WHERE task_id = $1", taskID).
-		Scan(&state)
+		QueryRow("SELECT * FROM productUploadsTask WHERE task_id = $1", taskID).
+		Scan(&taskState.TaskID, &taskState.State)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return state, nil
+	return taskState, nil
 }
 
 func (repo *repository) CreateTask() (int64, error) {
@@ -232,7 +233,7 @@ func (repo *repository) CreateTaskStats(taskStats *models.TaskStats) (int64, err
 		taskStats.RowsWithErrors,
 	)
 	if err != nil {
-		return 0, nil
+		return 0, err
 	}
 
 	affectedRowsCounter, err := res.RowsAffected()

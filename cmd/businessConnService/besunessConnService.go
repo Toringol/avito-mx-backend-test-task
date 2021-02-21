@@ -50,5 +50,7 @@ func main() {
 
 	router := businessConnService.NewHandlers(us, taskQueue, logger)
 
-	log.Fatal(http.ListenAndServe(viper.GetString("portListen"), router))
+	logger.Info("Starting server on port: ", viper.GetString("portListen"))
+
+	logger.Fatal(http.ListenAndServe(viper.GetString("portListen"), router))
 }

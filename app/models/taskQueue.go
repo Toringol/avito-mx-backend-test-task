@@ -8,6 +8,6 @@ import "mime/multipart"
 // swagger:model Task
 type Task struct {
 	TaskID   int64
-	SellerID string
+	SellerID int64
 	Files    map[string][]*multipart.FileHeader
 }
