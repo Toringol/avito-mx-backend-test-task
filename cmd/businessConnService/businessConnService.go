@@ -40,8 +40,8 @@ func main() {
 	logger := logrus.New()
 
 	us := usecase.NewUsecase(repository.NewRepository())
-	taskQueue := make(chan models.Task)
-	statsQueue := make(chan models.TaskStats)
+	taskQueue := make(chan models.Task, 100)
+	statsQueue := make(chan models.TaskStats, 100)
 	stopCh := make(chan struct{})
 
 	taskManager := taskManager.NewTaskManager(us, taskQueue, statsQueue, stopCh, logger)

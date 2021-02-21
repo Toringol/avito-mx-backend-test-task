@@ -2,6 +2,7 @@ package taskManager
 
 import (
 	"database/sql"
+	"fmt"
 	"mime/multipart"
 	"sync"
 
@@ -58,13 +59,14 @@ func (tm *taskManager) uploadUserFilesPackProducer(taskInfo *models.Task, statsQ
 	taskStats := new(models.TaskStats)
 	taskStats.TaskID = taskInfo.TaskID
 
-	fileStatsQueue := make(chan models.TaskStats)
+	fileStatsQueue := make(chan models.TaskStats, 100)
 	endFileStats := make(chan struct{})
 	var wg sync.WaitGroup
 
 	for _, fheaders := range taskInfo.Files {
 		for _, hdr := range fheaders {
 			wg.Add(1)
+			fmt.Println("Start go routine")
 			// for every file launch goroutine
 			go tm.uploadFileProducer(hdr, taskInfo, fileStatsQueue, &wg)
 		}
@@ -87,6 +89,8 @@ func (tm *taskManager) uploadUserFilesPackProducer(taskInfo *models.Task, statsQ
 
 	// wait until all statistics saves after all file uploads
 	<-endFileStats
+
+	fmt.Println("End upload files")
 
 	statsQueue <- *taskStats
 }
@@ -114,11 +118,14 @@ func (tm *taskManager) uploadFileProducer(hdr *multipart.FileHeader, taskInfo *m
 	sheets := f.GetSheetMap()
 	for _, sheet := range sheets {
 		sheetWG.Add(1)
+		fmt.Println("Start goroutine for sheet")
 		// for every sheet launch goroutine
 		go tm.uploadFileSheetProducer(f, taskInfo, sheet, fileStatsQueue, &sheetWG)
 	}
 
 	sheetWG.Wait()
+
+	fmt.Println("End goroutine for sheets")
 }
 
 // uploadFileSheetProducer - process upload data in sheet
@@ -134,13 +141,22 @@ func (tm *taskManager) uploadFileSheetProducer(f *excelize.File, taskInfo *model
 		tm.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 		return
 	}
+
+	fmt.Println(rows)
+
 	for _, row := range rows {
+		fmt.Println(row)
+
+		if len(row) == 0 {
+			break
+		}
+
 		productInfo, err := tools.ConvertXlsxRowToProductInfo(row, taskInfo.SellerID)
 		if err != nil {
 			fileStats.RowsWithErrors++
 
 			tm.logger.WithField("ErrInfo", err.Error()).Info("InternalError")
-			break
+			continue
 		}
 
 		productRecord, err := tm.usecase.SelectProduct(productInfo.SellerID, productInfo.OfferID)
@@ -154,7 +170,11 @@ func (tm *taskManager) uploadFileSheetProducer(f *excelize.File, taskInfo *model
 
 			fileStats.ProductsCreated += rowsAffected
 			continue
+		case err == sql.ErrNoRows && !productInfo.Available:
+			tm.logger.WithField("ErrInfo err", "No such products to delete").Error("InternalError")
+			continue
 		case err != nil:
+			tm.logger.WithField("ErrInfo", err.Error()).Error("InternalError")
 			return
 		}
 
