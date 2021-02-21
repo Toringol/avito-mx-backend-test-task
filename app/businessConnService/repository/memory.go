@@ -3,11 +3,11 @@ package repository
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/Toringol/avito-mx-backend-test-task/app/businessConnService"
 	"github.com/Toringol/avito-mx-backend-test-task/app/models"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -17,6 +17,8 @@ type repository struct {
 
 // NewRepository - create new repository that implement IRepository interface
 func NewRepository() businessConnService.IRepository {
+	logger := logrus.New()
+
 	host := viper.GetString("DBHost")
 	port := viper.GetInt("DBPort")
 	user := viper.GetString("DBUser")
@@ -29,14 +31,14 @@ func NewRepository() businessConnService.IRepository {
 
 	db, err := sql.Open("postgres", dbInfo)
 	if err != nil {
-		log.Println(err)
+		logger.WithField("Error info", err).Error("DB error")
 		return nil
 	}
 	db.SetMaxOpenConns(10)
 
 	err = db.Ping()
 	if err != nil {
-		log.Println(err)
+		logger.WithField("Error info", err).Error("DB error")
 		return nil
 	}
 

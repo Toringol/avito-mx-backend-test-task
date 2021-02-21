@@ -1,7 +1,7 @@
 portListen: :8080
 
-DBHost: localhost
+DBHost: 172.20.0.1
 DBPort: 5432
-DBUser: toringol
-DBPassword: educationproject
-DBName: productsinfo
+DBUser: avito
+DBPassword: avito
+DBName: avito
